@@ -31,7 +31,7 @@ Ce projet containerise une application complète comprenant :
 
 ```bash
 # Cloner le projet
-git clone <votre-repo>
+git clone https://github.com/gschmirgal/dockermkmpy.git
 cd dockermkmpy
 
 # Configurer la base de données
