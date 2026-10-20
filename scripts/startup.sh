@@ -45,15 +45,18 @@ TEMP_DIR=${TEMP_DIR%/}
 mkdir -p "$TEMP_DIR/csvtemp"
 
 # Premier démarrage : import initial en arrière-plan pour peupler la base
+# Tenté une seule fois, même en cas d'échec : le relancer à chaque redémarrage
+# multiplie les passages sur Cardmarket et fait durcir le challenge Cloudflare
 # Le marqueur est dans le volume app_data, supprimé par "docker compose down -v"
-FIRST_IMPORT_MARKER="$TEMP_DIR/.first-import-done"
+FIRST_IMPORT_MARKER="$TEMP_DIR/.first-import-attempted"
 FIRST_IMPORT_LOG="$TEMP_DIR/first-import.log"
 if [ ! -f "$FIRST_IMPORT_MARKER" ]; then
+    touch "$FIRST_IMPORT_MARKER"
     echo "Premier démarrage : import initial lancé en arrière-plan (log : $FIRST_IMPORT_LOG)"
     (
         cd /opt/mkmpy && ./.venv/bin/python3 ./launch.py \
-            && touch "$FIRST_IMPORT_MARKER" \
-            && cd /opt/mkmoraclepy && ./.venv/bin/python3 ./launch_predict.py
+            && cd /opt/mkmoraclepy && ./.venv/bin/python3 ./launch_predict.py \
+            || echo "Import initial en échec : relancer ./daily-task.sh depuis l'hôte"
     ) > "$FIRST_IMPORT_LOG" 2>&1 &
 fi
 

@@ -149,7 +149,8 @@ sudo docker compose exec app php bin/console doctrine:migrations:migrate
 | `Access denied` sur MySQL | Mot de passe avec caractère spécial, ou modifié après la création de la base (voir [Configuration](#configuration)) |
 | Port 8000 ou 3307 déjà pris | Changer le port côté hôte dans [docker-compose.yml](docker-compose.yml) |
 | Import bloqué sur Cardmarket | Passer `[Logging] level = INFO` pour voir l'étape fautive, ajuster `[Browser] chrome_version` |
-| Base vide après le premier démarrage | Consulter `/data/first-import.log`. Si l'import a échoué, il sera relancé au prochain démarrage. On peut aussi lancer `./daily-task.sh` |
+| Base vide après le premier démarrage | Consulter `/data/first-import.log`. L'import initial n'est tenté qu'une fois : en cas d'échec, lancer `./daily-task.sh` |
+| `challenge Cloudflare non résolu` | Trop de passages récents depuis votre IP : attendre quelques heures avant de relancer, sans enchaîner les tentatives |
 
 ## Structure
 
