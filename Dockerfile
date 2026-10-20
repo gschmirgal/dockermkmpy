@@ -7,15 +7,22 @@ RUN apt-get update && apt-get install -y \
     default-libmysqlclient-dev build-essential pkg-config default-mysql-client \
     && docker-php-ext-install intl pdo pdo_mysql zip
 
-# Installation Chromium pour Selenium
-RUN apt-get update && apt-get install -y \
-    chromium chromium-driver \
-    xvfb x11-utils xfonts-100dpi xfonts-75dpi xfonts-scalable xfonts-cyrillic \
-    && rm -rf /var/lib/apt/lists/*
+# Installation Google Chrome pour le scraping des extensions Cardmarket
+# Cloudflare bloque le Chromium de Debian, et sa simple présence fait aussi échouer Chrome :
+# ne pas installer le paquet chromium à côté
+# Google Chrome n'existe qu'en amd64 : sur arm64, repli sur Chromium (scraping probablement bloqué)
+RUN apt-get update && \
+    if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
+        curl -sfLo /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && \
+        apt-get install -y /tmp/chrome.deb && rm /tmp/chrome.deb; \
+    else \
+        echo "ATTENTION : Google Chrome indisponible sur $(dpkg --print-architecture), installation de Chromium" && \
+        apt-get install -y chromium; \
+    fi && \
+    rm -rf /var/lib/apt/lists/*
 
-# Configuration chemins Chromium pour Selenium
-ENV CHROME_BIN=/usr/bin/chromium
-ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver
+# Fuseau horaire du navigateur : Cloudflare bloque un navigateur en UTC derrière une IP française
+ENV TZ=Europe/Paris
 
 # Installation Composer
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
@@ -23,8 +30,29 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 # Correction permissions Git pour Symfony
 RUN git config --global --add safe.directory /var/www/html
 
-# Clonage projets GitHub
+# Configuration Apache pour Symfony
+COPY ./config/apache-vhost.conf /etc/apache2/sites-available/000-default.conf
+
+# Activation module rewrite Apache
+# Suppression de l'alias Debian /icons/ qui masque public/icons du front
+RUN a2enmod rewrite && \
+    sed -i 's|^Alias /icons/|#Alias /icons/|' /etc/apache2/mods-available/alias.conf
+
+# Clonage projets GitHub, du moins souvent modifié au plus souvent modifié :
+# un dépôt mis à jour ne reconstruit que lui et ceux qui le suivent
 # Le ADD du dernier commit invalide le cache Docker uniquement quand le dépôt a changé
+ADD https://api.github.com/repos/gschmirgal/mkmpy/git/refs/heads/main /tmp/ref-mkmpy.json
+RUN git clone https://github.com/gschmirgal/mkmpy.git /opt/mkmpy && \
+    cd /opt/mkmpy && python3 -m venv .venv && \
+    ./.venv/bin/pip install --no-cache-dir -r requirements.txt
+
+ADD https://api.github.com/repos/gschmirgal/MKMOraclePy/git/refs/heads/main /tmp/ref-oracle.json
+RUN git clone https://github.com/gschmirgal/MKMOraclePy.git /opt/mkmoraclepy && \
+    cd /opt/mkmoraclepy && python3 -m venv .venv && \
+    export MYSQLCLIENT_CFLAGS="-I/usr/include/mysql" && \
+    export MYSQLCLIENT_LDFLAGS="-L/usr/lib/$(uname -m)-linux-gnu -lmysqlclient" && \
+    ./.venv/bin/pip install --no-cache-dir -r requirements.txt
+
 ADD https://api.github.com/repos/gschmirgal/frontMkmPy/git/refs/heads/main /tmp/ref-front.json
 RUN git clone https://github.com/gschmirgal/frontMkmPy.git /var/www/html
 
@@ -38,24 +66,6 @@ RUN export DATABASE_URL="mysql://dummy:dummy@localhost:3306/dummy?serverVersion=
 
 # Copie .htaccess depuis répertoire config
 COPY ./config/.htaccess public/.htaccess
-
-ADD https://api.github.com/repos/gschmirgal/mkmpy/git/refs/heads/main /tmp/ref-mkmpy.json
-RUN git clone https://github.com/gschmirgal/mkmpy.git /opt/mkmpy && \
-    cd /opt/mkmpy && python3 -m venv .venv && \
-    ./.venv/bin/pip install --no-cache-dir -r requirements.txt
-
-ADD https://api.github.com/repos/gschmirgal/MKMOraclePy/git/refs/heads/main /tmp/ref-oracle.json
-RUN git clone https://github.com/gschmirgal/MKMOraclePy.git /opt/mkmoraclepy && \
-    cd /opt/mkmoraclepy && python3 -m venv .venv && \
-    export MYSQLCLIENT_CFLAGS="-I/usr/include/mysql" && \
-    export MYSQLCLIENT_LDFLAGS="-L/usr/lib/$(uname -m)-linux-gnu -lmysqlclient" && \
-    ./.venv/bin/pip install --no-cache-dir -r requirements.txt
-
-# Configuration Apache pour Symfony
-COPY ./config/apache-vhost.conf /etc/apache2/sites-available/000-default.conf
-
-# Activation module rewrite Apache
-RUN a2enmod rewrite
 
 # Copie scripts de configuration et démarrage
 COPY ./scripts/ini.sh /ini.sh

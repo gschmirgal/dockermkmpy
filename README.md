@@ -23,7 +23,7 @@ La stack assemble trois projets, clonés automatiquement au build :
 Ils tournent dans deux conteneurs :
 
 - **`mysql`** : MySQL 8.0, avec `local-infile` activé pour les imports CSV.
-- **`app`** : PHP 8.4 et Apache, plus Python, ainsi que Chromium pour le scraping.
+- **`app`** : PHP 8.4 et Apache, plus Python, ainsi que Google Chrome pour le scraping.
 
 ```
                  ┌───────────────── app ─────────────────┐
@@ -41,7 +41,7 @@ Prérequis :
 - Docker avec Compose v2 (`docker compose`)
 - Ports 8000 et 3307 libres
 - 4 Go de RAM
-- Architecture x86_64 ou arm64
+- Architecture x86_64 (sur arm64, l'image se construit avec Chromium, mais Cloudflare bloque le scraping des extensions)
 
 ```bash
 git clone https://github.com/gschmirgal/dockermkmpy.git
@@ -87,7 +87,7 @@ Toute la configuration se trouve dans [config/config.ini](config/config.ini), pa
 | `[Database]` | Connexion MySQL, plus `root_password` (lu uniquement par `docker-start.sh`) |
 | `[Folders]` | `temp` : dossier des CSV et des modèles, à laisser sur `/data/` (volume persistant) |
 | `[Logging]` | `WARNING` (silencieux) ou `INFO` (déroulé complet de l'import) |
-| `[Browser]` | `chrome_version` : version de Chromium à forcer en cas de souci de scraping |
+| `[Browser]` | `chrome_version` : version de Chrome à forcer en cas de souci de scraping |
 | `[IA]` | Hyperparamètres du RandomForest |
 
 Le fichier est monté dans le conteneur. Après une modification, il suffit de redémarrer l'application, sans rebuild :
@@ -150,7 +150,7 @@ sudo docker compose exec app php bin/console doctrine:migrations:migrate
 | Port 8000 ou 3307 déjà pris | Changer le port côté hôte dans [docker-compose.yml](docker-compose.yml) |
 | Import bloqué sur Cardmarket | Passer `[Logging] level = INFO` pour voir l'étape fautive, ajuster `[Browser] chrome_version` |
 | Base vide après le premier démarrage | Consulter `/data/first-import.log`. L'import initial n'est tenté qu'une fois : en cas d'échec, lancer `./daily-task.sh` |
-| `challenge Cloudflare non résolu` | Trop de passages récents depuis votre IP : attendre quelques heures avant de relancer, sans enchaîner les tentatives |
+| `challenge Cloudflare non résolu` | Vérifier que l'image utilise Google Chrome sans paquet `chromium` installé à côté, avec le fuseau `TZ=Europe/Paris` (voir le [Dockerfile](Dockerfile)) : Cloudflare bloque sinon. Éviter aussi d'enchaîner les tentatives |
 
 ## Structure
 
