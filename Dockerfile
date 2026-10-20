@@ -18,55 +18,38 @@ ENV CHROME_BIN=/usr/bin/chromium
 ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver
 
 # Installation Composer
-COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
-
-# Copie config.ini pour scripts Python
-COPY ./config/config.ini /opt/config.ini
-
-# Copie script d'initialisation
-COPY ./scripts/init.sh /init.sh
-RUN chmod +x /init.sh
-
-# Clonage projets GitHub
-RUN git clone https://github.com/gschmirgal/frontMkmPy.git /var/www/html && \
-    git clone https://github.com/gschmirgal/mkmpy.git /opt/mkmpy && \
-    git clone https://github.com/gschmirgal/MKMOraclePy.git /opt/mkmoraclepy
-
-# Création environnements virtuels Python
-RUN cd /opt/mkmpy && python3 -m venv .venv && \
-    cd /opt/mkmoraclepy && python3 -m venv .venv
-
-# Copie scripts de configuration et démarrage
-COPY ./scripts/generate-env.sh /generate-env.sh
-COPY ./scripts/startup.sh /startup.sh
-RUN chmod +x /generate-env.sh /startup.sh
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 # Correction permissions Git pour Symfony
 RUN git config --global --add safe.directory /var/www/html
 
-# Installation dépendances Symfony au build
-WORKDIR /var/www/html
-# .env temporaire pour éviter erreur DATABASE_URL au build
-RUN echo "DATABASE_URL=mysql://dummy:dummy@localhost:3306/dummy" > .env
-RUN composer install --optimize-autoloader
+# Clonage projets GitHub
+# Le ADD du dernier commit invalide le cache Docker uniquement quand le dépôt a changé
+ADD https://api.github.com/repos/gschmirgal/frontMkmPy/git/refs/heads/main /tmp/ref-front.json
+RUN git clone https://github.com/gschmirgal/frontMkmPy.git /var/www/html
 
-# Installation apache-pack et copie .htaccess
-RUN composer require symfony/apache-pack --no-interaction && \
-    composer recipes:install symfony/apache-pack --force || true
+# Installation dépendances Symfony au build
+# DATABASE_URL factice pour éviter l'erreur au build (la vraie est générée dans .env.local au démarrage)
+WORKDIR /var/www/html
+# Les dépendances de dev sont conservées pour pouvoir basculer en [App] env = dev
+RUN export DATABASE_URL="mysql://dummy:dummy@localhost:3306/dummy?serverVersion=8.0" && \
+    composer install --optimize-autoloader --no-interaction && \
+    APP_ENV=prod php bin/console asset-map:compile
 
 # Copie .htaccess depuis répertoire config
 COPY ./config/.htaccess public/.htaccess
 
-# Installation dépendances Python au build
-RUN cd /opt/mkmpy && \
-    . .venv/bin/activate && \
-    pip install --no-cache-dir -r requirements.txt
+ADD https://api.github.com/repos/gschmirgal/mkmpy/git/refs/heads/main /tmp/ref-mkmpy.json
+RUN git clone https://github.com/gschmirgal/mkmpy.git /opt/mkmpy && \
+    cd /opt/mkmpy && python3 -m venv .venv && \
+    ./.venv/bin/pip install --no-cache-dir -r requirements.txt
 
-RUN cd /opt/mkmoraclepy && \
-    . .venv/bin/activate && \
+ADD https://api.github.com/repos/gschmirgal/MKMOraclePy/git/refs/heads/main /tmp/ref-oracle.json
+RUN git clone https://github.com/gschmirgal/MKMOraclePy.git /opt/mkmoraclepy && \
+    cd /opt/mkmoraclepy && python3 -m venv .venv && \
     export MYSQLCLIENT_CFLAGS="-I/usr/include/mysql" && \
-    export MYSQLCLIENT_LDFLAGS="-L/usr/lib/x86_64-linux-gnu -lmysqlclient" && \
-    pip install --no-cache-dir -r requirements.txt
+    export MYSQLCLIENT_LDFLAGS="-L/usr/lib/$(uname -m)-linux-gnu -lmysqlclient" && \
+    ./.venv/bin/pip install --no-cache-dir -r requirements.txt
 
 # Configuration Apache pour Symfony
 COPY ./config/apache-vhost.conf /etc/apache2/sites-available/000-default.conf
@@ -74,8 +57,12 @@ COPY ./config/apache-vhost.conf /etc/apache2/sites-available/000-default.conf
 # Activation module rewrite Apache
 RUN a2enmod rewrite
 
-# Configuration finale Symfony
-WORKDIR /var/www/html
+# Copie scripts de configuration et démarrage
+COPY ./scripts/ini.sh /ini.sh
+COPY ./scripts/generate-env.sh /generate-env.sh
+COPY ./scripts/startup.sh /startup.sh
+RUN chmod +x /generate-env.sh /startup.sh
+
 EXPOSE 80
 
 # Exécution script de démarrage

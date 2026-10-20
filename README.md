@@ -1,289 +1,172 @@
-# Docker MKM Python Stack
+# dockermkmpy
 
-![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)
-![Symfony](https://img.shields.io/badge/Symfony-7.3-000000?style=for-the-badge&logo=symfony&logoColor=white)
-![PHP](https://img.shields.io/badge/PHP-8.4-777BB4?style=for-the-badge&logo=php&logoColor=white)
-![MySQL](https://img.shields.io/badge/MySQL-8.0-4479A1?style=for-the-badge&logo=mysql&logoColor=white)
-![Python](https://img.shields.io/badge/Python-3.13-3776AB?style=for-the-badge&logo=python&logoColor=white)
-![Apache](https://img.shields.io/badge/Apache-2.4-D22128?style=for-the-badge&logo=apache&logoColor=white)
-![Selenium](https://img.shields.io/badge/Selenium-43B02A?style=for-the-badge&logo=selenium&logoColor=white)
-![Chromium](https://img.shields.io/badge/Chromium-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white)
+![Docker Compose](https://img.shields.io/badge/Docker_Compose-v2-2496ED?logo=docker&logoColor=white)
+![Symfony](https://img.shields.io/badge/Symfony-7.3-000000?logo=symfony&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)
+![MySQL](https://img.shields.io/badge/MySQL-8.0-4479A1?logo=mysql&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-yellow)
 
-Stack Docker complète avec **Symfony 7.3**, **MySQL 8.0** et **Python 3.13** pour applications de data science et web.
+Déploiement Docker clé en main d'un outil de suivi et de prédiction des prix des cartes Magic: The Gathering sur Cardmarket.
 
-## 📋 Vue d'ensemble
+Une seule commande construit l'image, démarre la base et l'interface web, puis lance le premier import de données.
 
-Ce projet containerise une application complète comprenant :
-- **Frontend/API** : Symfony 7.3 avec Apache 2.4
-- **Base de données** : MySQL 8.0 avec LOCAL_INFILE activé
-- **Scripts Python** : Environnements virtuels pour data science (pandas, scikit-learn)
-- **Selenium** : Chromium configuré pour automatisation web
-- **Configuration centralisée** : Via `config.ini`
+## Contenu
 
-## 🚀 Démarrage rapide
+La stack assemble trois projets, clonés automatiquement au build :
 
-### Prérequis
-- Docker et Docker Compose installés
-- Ports 8000 et 3307 disponibles
-- 4GB RAM minimum recommandés
+| Projet | Rôle | Emplacement dans le conteneur |
+|---|---|---|
+| [frontMkmPy](https://github.com/gschmirgal/frontMkmPy) | Interface web Symfony (consultation des prix, graphiques, prédictions) | `/var/www/html` |
+| [mkmpy](https://github.com/gschmirgal/mkmpy) | Import quotidien des données Cardmarket et Scryfall dans MySQL | `/opt/mkmpy` |
+| [MKMOraclePy](https://github.com/gschmirgal/MKMOraclePy) | Apprentissage (RandomForest) et prédiction des prix | `/opt/mkmoraclepy` |
 
-### Installation
+Ils tournent dans deux conteneurs :
+
+- **`mysql`** : MySQL 8.0, avec `local-infile` activé pour les imports CSV.
+- **`app`** : PHP 8.4 et Apache, plus Python, ainsi que Chromium pour le scraping.
+
+```
+                 ┌───────────────── app ─────────────────┐
+navigateur ────▶ │  Apache + Symfony (frontMkmPy)  :8000 │
+                 │                                       │      ┌─ mysql ─┐
+  daily-task ──▶ │  mkmpy (import) ─▶ MKMOraclePy        │ ───▶ │ mkmpy_db│
+ weekly-task ──▶ │                    (learn / predict)  │      └─────────┘
+                 │  /data : CSV d'import, modèles IA     │
+                 └───────────────────────────────────────┘
+```
+
+## Démarrage
+
+Prérequis :
+- Docker avec Compose v2 (`docker compose`)
+- Ports 8000 et 3307 libres
+- 4 Go de RAM
+- Architecture x86_64 ou arm64
 
 ```bash
-# Cloner le projet
 git clone https://github.com/gschmirgal/dockermkmpy.git
 cd dockermkmpy
 
-# Configurer la base de données
-cp config/config.ini.example config/config.ini
-# Éditer config/config.ini selon vos besoins
+# Changer au minimum les mots de passe
+nano config/config.ini
 
-# Démarrer la stack complète
 ./docker-start.sh
-#premier chargement des données
-./daily-task.sh
 ```
 
-### Accès aux services
+L'application est ensuite accessible sur http://localhost:8000.
 
-- **Application web** : http://localhost:8000
-- **MySQL** : localhost:3307 (root/rootpass)
-- **Base de données** : mkmpy_db (utilisateur: test_user)
+Au premier démarrage, un import complet se lance en arrière-plan, sans bloquer l'accès au site. Il dure plusieurs minutes. Pour le suivre :
 
-## 📁 Structure du projet
-
-```
-dockermkmpy/
-├── config/
-│   ├── config.ini          # Configuration centralisée, à modifier si besoin
-│   ├── apache-vhost.conf    # Configuration Apache
-│   └── .htaccess           # Règles de réécriture Symfony
-├── scripts/
-│   ├── docker-start.sh     # Script de démarrage principal
-│   ├── startup.sh          # Script d'initialisation conteneur
-│   ├── generate-env.sh     # Génération .env.local Symfony
-│   └── init.sh             # Script d'installation initial
-├── docker-compose.yml      # Orchestration services
-├── Dockerfile             # Image application personnalisée
-└── README.md
+```bash
+sudo docker compose exec app tail -f /data/first-import.log
 ```
 
-## ⚙️ Configuration
+## Tâches planifiées
 
-### config.ini
+| Script | Fréquence | Ce qu'il fait |
+|---|---|---|
+| `daily-task.sh` | Quotidienne | Importe les nouvelles données Cardmarket, puis calcule les prédictions |
+| `weekly-task.sh` | Hebdomadaire | Réentraîne le modèle de prédiction |
 
-Fichier de configuration principal pour tous les services :
+Les prédictions n'apparaissent qu'après quelques jours d'historique et un premier apprentissage.
 
-```ini
-[Database]
-host     = mysql
-user     = test_user
-password = simplepass
-database = mkmpy_db
-port     = 3306
+Les scripts fonctionnent depuis n'importe quel dossier, ce qui permet de les mettre dans la crontab de root :
 
-[Folders]
-temp = /tmp/
-
-[IA]
-n_estimators = 200
-max_depth = 15
-# ... autres paramètres IA
+```cron
+0 6 * * *  /chemin/vers/dockermkmpy/daily-task.sh
+0 3 * * 0  /chemin/vers/dockermkmpy/weekly-task.sh
 ```
 
-⚠️ **Important** : Évitez les caractères spéciaux (`$`, `!`, `@`, `%`) dans les mots de passe MySQL car ils peuvent causer des problèmes d'échappement dans l'URL de connexion Doctrine.
+## Configuration
 
-### Variables d'environnement
+Toute la configuration se trouve dans [config/config.ini](config/config.ini), partagé par les trois projets :
 
-Le script `generate-env.sh` génère automatiquement `.env.local` pour Symfony depuis `config.ini` :
-- `DATABASE_URL` avec LOCAL_INFILE activé
-- `MESSENGER_TRANSPORT_DSN` configuré
+| Section | Contenu |
+|---|---|
+| `[App]` | `env` : `prod` (par défaut) ou `dev` (mode debug Symfony, barre de debug) |
+| `[Database]` | Connexion MySQL, plus `root_password` (lu uniquement par `docker-start.sh`) |
+| `[Folders]` | `temp` : dossier des CSV et des modèles, à laisser sur `/data/` (volume persistant) |
+| `[Logging]` | `WARNING` (silencieux) ou `INFO` (déroulé complet de l'import) |
+| `[Browser]` | `chrome_version` : version de Chromium à forcer en cas de souci de scraping |
+| `[IA]` | Hyperparamètres du RandomForest |
 
-## Architecture technique
+Le fichier est monté dans le conteneur. Après une modification, il suffit de redémarrer l'application, sans rebuild :
 
-### Conteneurs
+```bash
+sudo docker compose restart app
+```
 
-1. **mysql** (mysql:8.0)
-   - Authentication native password
-   - LOCAL_INFILE=1 pour imports CSV
-   - Volume persistant `mysql_data`
+Par exemple, pour déboguer le front, passez `[App] env = dev`, redémarrez, puis revenez à `prod` une fois terminé.
 
-2. **app** (build custom)
-   - PHP 8.4 + Apache 2.4
-   - Symfony 7.3 avec toutes dépendances
-   - Python 3.13 + environnements virtuels
-   - Chromium + ChromeDriver pour Selenium
+Le `APP_SECRET` de Symfony est généré au premier démarrage et conservé dans le volume `/data`.
 
-### Optimisations build-time
+> [!WARNING]
+> Évitez `$`, `!`, `@` et `%` dans les mots de passe : ils cassent l'URL de connexion Doctrine.
 
-- **Installation Composer** : Au build, pas au runtime
-- **Compilation mysqlclient** : Pré-compilé dans l'image
-- **Environnements Python** : Créés et configurés au build
-- **Configuration Apache** : Intégrée dans l'image
+> [!NOTE]
+> Les identifiants MySQL ne sont appliqués qu'à la création de la base. Pour les changer ensuite, il faut soit les modifier dans MySQL, soit repartir de zéro (`down -v`).
 
-### Système d'attente intelligent
+## Mise à jour
 
-- **Timeout configuré** : 60 secondes maximum
-- **Détection réseau** : Via netcat sur port MySQL
-- **Gestion d'erreur** : Continuation même si script Python échoue
+```bash
+./docker-start.sh
+```
 
-## Projets intégrés
+Le build vérifie s'il y a un nouveau commit sur la branche `main` de chacun des trois projets. Il ne re-clone et ne réinstalle que les projets qui ont changé, et les migrations Doctrine s'appliquent au démarrage.
 
-Le système clone et configure automatiquement :
+## Données
 
-1. **frontMkmPy** : Application Symfony principale
-2. **mkmpy** : Scripts Python de data science
-3. **MKMOraclePy** : Scripts Python pour base Oracle
+| Volume | Contenu |
+|---|---|
+| `mysql_data` | Base de données |
+| `app_data` | `/data` : CSV d'import, modèles entraînés, log du premier import |
+
+`sudo docker compose down` arrête la stack et conserve les données.
+
+`sudo docker compose down -v` supprime en plus **toutes les données**. Le démarrage suivant repart de zéro et relance un import initial.
+
+MySQL n'écoute que sur la machine hôte, au port `127.0.0.1:3307` :
+
+```bash
+mysql -h 127.0.0.1 -P 3307 -u test_user -p mkmpy_db
+```
 
 ## Commandes utiles
 
-### Gestion des conteneurs
-
 ```bash
-# Démarrage complet (build + start)
-./docker-start.sh
-
-#chargement des données cardmarket (à lancer tous les jours pour etre à jour)
-#les données prévisonelles apparaitront apres plusieurs jours
-./daily-task.sh 
-
-#lancement apprentissage (a lancer regulierement ex:hebdo)
-./weekly-task.sh 
-
-# Redémarrer seulement l'application
-sudo docker-compose restart app
-
-# Voir les logs en temps réel
-sudo docker-compose logs -f app
-
-# Accéder au conteneur
-sudo docker-compose exec app bash
-
-# Arrêter tout
-sudo docker-compose down
-
-# Nettoyage complet (avec volumes)
-sudo docker-compose down -v
+sudo docker compose ps                 # état des conteneurs
+sudo docker compose logs -f app        # logs de l'application
+sudo docker compose exec app bash      # shell dans le conteneur
+sudo docker compose restart app        # redémarrer l'application seule
+sudo docker compose exec app php bin/console doctrine:migrations:migrate
 ```
 
-### Base de données
+## Dépannage
 
-```bash
-# Connexion MySQL depuis l'hôte
-mysql -h 127.0.0.1 -P 3307 -u test_user -psimplepass mkmpy_db
+| Symptôme | Piste |
+|---|---|
+| `app` ne démarre pas | `sudo docker compose logs app` : le plus souvent MySQL injoignable ou une migration en échec |
+| `Access denied` sur MySQL | Mot de passe avec caractère spécial, ou modifié après la création de la base (voir [Configuration](#configuration)) |
+| Port 8000 ou 3307 déjà pris | Changer le port côté hôte dans [docker-compose.yml](docker-compose.yml) |
+| Import bloqué sur Cardmarket | Passer `[Logging] level = INFO` pour voir l'étape fautive, ajuster `[Browser] chrome_version` |
+| Base vide après le premier démarrage | Consulter `/data/first-import.log`. Si l'import a échoué, il sera relancé au prochain démarrage. On peut aussi lancer `./daily-task.sh` |
 
-# Connexion root
-mysql -h 127.0.0.1 -P 3307 -u root -prootpass
+## Structure
 
-# Migrations Symfony
-sudo docker-compose exec app php bin/console doctrine:migrations:migrate
-
-# Vérifier les utilisateurs MySQL
-sudo docker exec -it dockermkmpy_mysql_1 mysql -u root -prootpass -e "SELECT user, host FROM mysql.user;"
-
-# Voir les logs MySQL
-sudo docker-compose logs mysql
+```
+config/
+  config.ini          configuration commune
+  apache-vhost.conf   vhost Apache
+  .htaccess           réécriture d'URL Symfony
+scripts/
+  startup.sh          point d'entrée du conteneur (migrations, import initial, Apache)
+  generate-env.sh     génère .env.local pour Symfony depuis config.ini
+  ini.sh              lecture de config.ini
+docker-start.sh       build + démarrage
+daily-task.sh         import + prédiction
+weekly-task.sh        apprentissage
 ```
 
-### Scripts Python
+## Licence
 
-```bash
-# Exécuter script mkmpy
-sudo docker-compose exec app bash -c "cd /opt/mkmpy && ./.venv/bin/python3 ./launch.py"
-
-# Accéder à l'environnement Python
-sudo docker-compose exec app bash -c "cd /opt/mkmpy && source .venv/bin/activate && python"
-```
-
-## 🐛 Dépannage
-
-### Problèmes courants
-
-**Port 8000 déjà utilisé**
-```bash
-# Trouver le processus
-sudo lsof -i :8000
-# Modifier le port dans docker-compose.yml
-```
-
-**Erreur MySQL connection (Access denied)**
-```bash
-# Vérifier que MySQL est démarré
-sudo docker-compose ps
-# Vérifier les logs
-sudo docker-compose logs mysql
-
-# Si problème avec caractères spéciaux dans le mot de passe
-# Modifier config.ini avec un mot de passe simple
-# Exemple: password = simplepass123 (éviter $, !, @, %)
-```
-
-**Reset complet en cas de problème de configuration**
-```bash
-# Nettoyage complet Docker (supprime TOUT)
-sudo docker system prune -a --volumes
-
-# Suppression manuelle des volumes persistants si nécessaire
-sudo docker-compose down -v --remove-orphans
-
-# Redémarrage propre
-./docker-start.sh
-```
-
-### Logs détaillés
-
-```bash
-# Logs application complète
-sudo docker-compose logs app
-
-# Logs MySQL uniquement  
-sudo docker-compose logs mysql
-
-# Logs avec timestamps
-sudo docker-compose logs -t app
-```
-
-### Nettoyage et maintenance
-
-```bash
-# Nettoyage léger (garde les images de base)
-sudo docker-compose down -v
-
-# Nettoyage complet (libère maximum d'espace)
-sudo docker system prune -a --volumes
-
-# Vérification de l'espace utilisé
-sudo docker system df
-
-# Surveillance des conteneurs
-sudo docker stats
-```
-
-### Debugging efficace
-
-```bash
-# Logs avec timestamps pour troubleshooting
-sudo docker-compose logs -t -f app
-
-# Tester la connectivité réseau entre conteneurs
-sudo docker exec dockermkmpy_app_1 nc -zv mysql 3306
-
-# Vérifier la configuration générée
-sudo docker exec dockermkmpy_app_1 cat /var/www/html/.env.local
-```
-
-### Tests
-
-```bash
-# Test démarrage complet
-./docker-start.sh
-
-# Test accès web
-curl -I http://localhost:8000
-
-# Test base de données
-mysql -h 127.0.0.1 -P 3307 -u test_user -psimplepass -e "SHOW DATABASES;"
-```
-## License
-
-MIT License - voir [LICENSE](LICENSE) pour les détails.
+MIT

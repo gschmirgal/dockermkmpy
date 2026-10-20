@@ -1,0 +1,5 @@
+# Généré par docker-start.sh depuis config.ini
+.env
+
+# Config locale de l'éditeur
+.vscode/*

@@ -1,25 +1,39 @@
-version: '3.8'
-
 services:
   mysql:
     image: mysql:8.0
     command: --default-authentication-plugin=mysql_native_password --local-infile=1
+    restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE}
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     ports:
-      - "3307:3306"
+      # Accessible uniquement depuis la machine hôte
+      - "127.0.0.1:3307:3306"
     volumes:
       - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
 
   app:
     build: .
+    restart: unless-stopped
     ports:
       - "8000:80"
     depends_on:
-      - mysql
+      mysql:
+        condition: service_healthy
+    volumes:
+      # config.ini monté en lecture seule : une modification ne nécessite pas de rebuild
+      - ./config/config.ini:/opt/config.ini:ro
+      - ./config/config.ini:/opt/mkmpy/config.ini:ro
+      - app_data:/data
 
 volumes:
   mysql_data:
+  app_data:
